@@ -1,0 +1,26 @@
+{
+  "graph.adapter.input_undefined": "Input \"{{path}}\" resolved to undefined",
+  "graph.adapter.input_nan": "Input \"{{path}}\" resolved to NaN: improve numeric stability",
+
+  "graph.validate.structure": "{{path}}: {{message}}",
+  "graph.validate.unknown_type": "Unknown type \"{{opType}}\" for node \"{{node}}\"",
+  "graph.validate.duplicate_name": "Duplicate node name: \"{{node}}\"",
+  "graph.validate.root_conflict": "Node name conflicts with root: \"{{node}}\"",
+  "graph.validate.dangling_input": "Node \"{{node}}\" references undefined input \"{{input}}\"",
+  "graph.validate.cycle": "Graph contains a cycle: {{nodes}}",
+  "graph.validate.unreachable": "Unreachable nodes from root: {{nodes}}",
+
+  "fbloop.feedback": "Validators returned feedbacks: {{feedback}}",
+  "fbloop.fail_exhausted": "Agent failed to generate structured result.",
+
+  "tools.ask_opts": "Ask the user a question with choice options. Returns user's answer. You should always call this for more user input.",
+  "tools.arg_question": "The question to ask",
+  "tools.arg_opts": "The available options, can be empty",
+
+  "tools.sql.list_tables": "List all tables in the database with row counts. Use this to discover what data is available.",
+  "tools.sql.describe_table": "Describe the schema (columns, types, keys) of a specific table. Use this before querying to understand available fields.",
+  "tools.sql.query_sql": "Execute a SQL SELECT query on the database. Results are returned as a markdown table. Only SELECT queries are allowed.",
+
+  "generic.error": "Error: {{name}}: {{message}}",
+  "generic.unexpected": "Unexpected error: {{name}}: {{message}}"
+}

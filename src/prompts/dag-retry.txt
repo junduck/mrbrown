@@ -1,0 +1,6 @@
+{{request}}
+
+Previous attempt failed validation:
+{{errors}}
+
+Fix the graph and output a corrected version.
