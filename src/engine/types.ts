@@ -2,14 +2,15 @@ import type { OpGraph } from "../graph/types.js";
 import type { FillReceipt } from "../book/order.js";
 import type { Pos } from "../book/pos.js";
 import type { CommissionOpts, SlippageOpts } from "../bt-bar/types.js";
-import type { Basket, Scored } from "../portfolio/types.js";
+import type { Basket, Scored, WeightRecipe } from "../portfolio/types.js";
 
-export type BasketFn = (scored: Scored) => Basket;
+export type BasketFn = (scored: Scored, current?: Basket) => Basket;
 
 export interface StrategyDef {
   graph: OpGraph;
   scoreNode: string;
-  basketFn: BasketFn;
+  basketFn?: BasketFn;
+  recipe?: WeightRecipe;
 }
 
 export interface BacktestOpts {

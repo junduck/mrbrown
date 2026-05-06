@@ -4,7 +4,7 @@ import { OpRegistry } from "#src/graph/registry.js";
 import { CONST_OPS } from "#src/op-graph/const.js";
 import { TushareBarSource } from "#src/data-bar/index.js";
 import { runBacktest } from "#src/engine/index.js";
-import { equal } from "#src/portfolio/basket.js";
+import { basket_equal as equal } from "#src/portfolio/basket.js";
 import type { TushareDailyRow } from "#src/data-bar/index.js";
 
 function setupRegistry(): OpRegistry {
@@ -147,6 +147,56 @@ describe("runBacktest", () => {
 
     expect(result.fills.length).toBe(1);
     expect(result.pos.long?.get("A")?.quant).toBe(1000);
+  });
+
+  it("runs with WeightRecipe instead of basketFn", async () => {
+    const db = seedDbFlat();
+    const source = new TushareBarSource(db);
+
+    const result = await runBacktest(source, setupRegistry(), {
+      graph: SIMPLE_GRAPH,
+      scoreNode: "score",
+      recipe: {
+        scoredTransforms: [],
+        basketCtor: { fn: "basket_equal" },
+      },
+    }, {
+      universe: ["A", "B"],
+      start: new Date(2010, 0, 4),
+      end: new Date(2010, 0, 10),
+      initialCash: 200_000,
+      lotSize: 0,
+      rebalanceThreshold: 0.05,
+    });
+
+    expect(result.equity).toHaveLength(3);
+    expect(result.fills.length).toBe(2);
+    expect(result.pos.long?.get("A")?.quant).toBe(1000);
+    expect(result.pos.long?.get("B")?.quant).toBe(500);
+  });
+
+  it("falls back to DEFAULT_RECIPE when neither basketFn nor recipe provided", async () => {
+    const db = seedDbFlat();
+    const source = new TushareBarSource(db);
+
+    const result = await runBacktest(source, setupRegistry(), {
+      graph: SIMPLE_GRAPH,
+      scoreNode: "score",
+    }, {
+      universe: ["A", "B"],
+      start: new Date(2010, 0, 4),
+      end: new Date(2010, 0, 10),
+      initialCash: 200_000,
+      lotSize: 0,
+      rebalanceThreshold: 0.05,
+    });
+
+    expect(result.equity).toHaveLength(3);
+    expect(result.fills.length).toBe(2);
+    // DEFAULT_RECIPE has risk_capWeight(max: 0.1), so each position is 10% of NAV
+    expect(result.pos.long?.get("A")?.quant).toBe(200);
+    expect(result.pos.long?.get("B")?.quant).toBe(100);
+    expect(result.pos.cash).toBeGreaterThan(0);
   });
 
   it("yields empty result for empty universe", async () => {

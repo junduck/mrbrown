@@ -36,7 +36,7 @@ console.log();
 
 console.log("Generating DAG...\n");
 
-const { graph } = await generateDag(request, { model });
+const { graph, recipe } = await generateDag(request, { model });
 
 console.log("=== Generated Graph ===");
 console.log(JSON.stringify(graph, null, 2));
@@ -47,3 +47,9 @@ console.log(
   "| Output:",
   graph.output ?? "(none)",
 );
+if (recipe) {
+  console.log("\n=== Weight Recipe ===");
+  console.log(JSON.stringify(recipe, null, 2));
+} else {
+  console.log("\n(No weight recipe — DEFAULT_RECIPE will be used)");
+}

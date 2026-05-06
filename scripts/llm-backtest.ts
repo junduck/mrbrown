@@ -1,56 +1,66 @@
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
 import Database from "better-sqlite3";
+import { createModelFromEnv } from "../src/agent/model.js";
+import { generateDag } from "../src/agent-dag/agent.js";
 import { createCompactRegistry } from "../src/agent-dag/registry.js";
 import { TushareBarSource } from "../src/data-bar/index.js";
 import { runBacktest } from "../src/engine/index.js";
-import { filter_gate as gate, basket_proportional as proportional } from "../src/portfolio/basket.js";
 import { asDateString } from "../src/data-bar/fmt.js";
-import type { Basket, Scored } from "../src/portfolio/types.js";
-import type { OpGraph } from "../src/graph/types.js";
 
-const MACD_GRAPH = {
-  root: "bar",
-  nodes: [
-    {
-      name: "ema_fast",
-      type: "EMA",
-      init: { period: 12 },
-      inputs: ["bar.close"],
-    },
-    {
-      name: "ema_slow",
-      type: "EMA",
-      init: { period: 26 },
-      inputs: ["bar.close"],
-    },
-    { name: "macd_line", type: "Sub", inputs: ["ema_fast", "ema_slow"] },
-    { name: "signal", type: "EMA", init: { period: 9 }, inputs: ["macd_line"] },
-    { name: "histogram", type: "Sub", inputs: ["macd_line", "signal"] },
-  ],
-  output: ["histogram"],
-} as OpGraph;
+const thesis = process.argv[2];
+if (!thesis) {
+  console.error("Usage: npx tsx scripts/llm-backtest.ts <thesis>");
+  console.error("Example: npx tsx scripts/llm-backtest.ts 'Buy stocks with strong MACD momentum'");
+  process.exit(1);
+}
 
-function pickRandomUniverse(db: Database.Database, n: number): string[] {
+const dbPath = process.env["MRBROWN_DAILY_DB"] ?? "local_data/ts_daily.db";
+const db = new Database(dbPath, { readonly: true });
+
+function pickRandomUniverse(n: number): string[] {
   const rows = db
-    .prepare("SELECT DISTINCT ts_code FROM daily ORDER BY RANDOM() LIMIT ?")
+    .prepare(
+      `SELECT DISTINCT ts_code FROM daily
+       WHERE trade_date >= '20230101'
+       GROUP BY ts_code HAVING COUNT(*) >= 120
+       ORDER BY RANDOM() LIMIT ?`,
+    )
     .all(n) as { ts_code: string }[];
   return rows.map((r) => r.ts_code);
 }
 
-function macdBasketFn(scored: Scored): Basket {
-  const positive = gate(scored, 0);
-  if (positive.length === 0) return new Map();
-  return proportional(positive);
-}
-
 async function main() {
-  const dbPath = process.env["MRBROWN_DAILY_DB"] ?? "local_data/ts_daily.db";
-  const db = new Database(dbPath, { readonly: true });
+  const model = createModelFromEnv();
 
-  const universe = pickRandomUniverse(db, 50);
-  console.log(
-    `Universe (${universe.length}): ${universe.slice(0, 5).join(", ")}...`,
-  );
+  console.log(`Thesis: ${thesis}`);
+  console.log();
 
+  console.log("Step 1: Selecting universe...");
+  const universe = pickRandomUniverse(50);
+  console.log(`Universe (${universe.length}): ${universe.slice(0, 5).join(", ")}...`);
+  console.log();
+
+  console.log("Step 2: Generating scoring DAG + weight recipe...");
+  const { graph, recipe } = await generateDag(thesis, {
+    model,
+    promptName: "dag-score",
+  });
+
+  console.log("=== Generated Graph ===");
+  console.log(JSON.stringify(graph, null, 2));
+  console.log(`Nodes: ${graph.nodes.length} | Output: ${graph.output ?? "(none)"}`);
+
+  if (recipe) {
+    console.log("\n=== Weight Recipe ===");
+    console.log(JSON.stringify(recipe, null, 2));
+  } else {
+    console.log("\n(Using DEFAULT_RECIPE for portfolio weights)");
+  }
+  console.log();
+
+  console.log("Step 3: Running backtest...");
   const source = new TushareBarSource(db);
   const registry = createCompactRegistry();
 
@@ -64,11 +74,7 @@ async function main() {
   const result = await runBacktest(
     source,
     registry,
-    {
-      graph: MACD_GRAPH,
-      scoreNode: "histogram",
-      basketFn: macdBasketFn,
-    },
+    { graph, scoreNode: "output", recipe },
     {
       universe,
       start,
@@ -80,7 +86,8 @@ async function main() {
     },
   );
 
-  console.log(`\n=== Backtest Result ===`);
+  console.log();
+  console.log("=== Backtest Result ===");
   console.log(`Bars:    ${result.equity.length}`);
   console.log(`Fills:   ${result.fills.length}`);
   console.log(`Start:   ${asDateString(result.start, "yyyy-MM-dd")}`);

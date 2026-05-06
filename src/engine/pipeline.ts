@@ -9,12 +9,20 @@ import type { Order } from "../book/order.js";
 import { needsRebalance, computeRebalance } from "../portfolio/rebalance.js";
 import type { RebalanceTrade } from "../portfolio/rebalance.js";
 import type { Basket, Scored } from "../portfolio/types.js";
+import { compileRecipe, DEFAULT_RECIPE } from "../portfolio/recipe.js";
+import type { BasketFn } from "./types.js";
 import type {
   StrategyDef,
   BacktestOpts,
   BacktestResult,
   EquityPoint,
 } from "./types.js";
+
+function resolveBasketFn(strategy: StrategyDef): BasketFn {
+  if (strategy.recipe) return compileRecipe(strategy.recipe);
+  if (strategy.basketFn) return strategy.basketFn;
+  return compileRecipe(DEFAULT_RECIPE);
+}
 
 export async function runBacktest(
   source: BarSource,
@@ -28,7 +36,9 @@ export async function runBacktest(
   }
 
   let broker: BtBarBroker | null = null;
+  let currentBasket: Basket = new Map();
   const equity: EquityPoint[] = [];
+  const basketFn = resolveBasketFn(strategy);
 
   for await (const slice of source.load(opts.universe, opts.start, opts.end)) {
     if (!broker) {
@@ -48,7 +58,8 @@ export async function runBacktest(
 
     const scored = scoreSymbols(execs, slice, strategy.scoreNode);
     if (scored.length > 0) {
-      const basket = strategy.basketFn(scored);
+      const basket = basketFn(scored, currentBasket);
+      currentBasket = basket;
       rebalanceAndSubmit(b, basket, batch, opts);
     }
 

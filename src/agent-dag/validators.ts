@@ -7,6 +7,8 @@ import {
 import { GraphExec } from "../graph/exec.js";
 import { loadSampleBars } from "./fixtures.js";
 import type { FeedbackResult } from "../agent/feedback-loop.js";
+import type { WeightRecipe } from "../portfolio/types.js";
+import { compileRecipe } from "../portfolio/recipe.js";
 
 import type { BarData } from "../common.js";
 
@@ -100,5 +102,17 @@ export function validateRuntime(
     };
   }
 
+  return { type: "ok" };
+}
+
+export function validateRecipe(recipe: WeightRecipe): FeedbackResult {
+  try {
+    compileRecipe(recipe);
+  } catch (e) {
+    return {
+      type: "error",
+      feedback: [`Weight recipe compilation failed: ${(e as Error).message}`],
+    };
+  }
   return { type: "ok" };
 }

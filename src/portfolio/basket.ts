@@ -1,22 +1,84 @@
 import type { Basket, Scored } from "./types.js";
 
+// --- filter_* (Scored → Scored) ---
+
 /** Keep symbols with score >= threshold. */
-export function gate(scores: Scored, threshold: number): Scored {
+export function filter_gate(scores: Scored, threshold: number): Scored {
   return scores.filter(([, s]) => s >= threshold);
 }
 
 /** Take top N symbols by score (descending). */
-export function topN(scores: Scored, n: number): Scored {
+export function filter_topN(scores: Scored, n: number): Scored {
   return [...scores].sort((a, b) => b[1] - a[1]).slice(0, n);
 }
 
 /** Take bottom N symbols by score (ascending). */
-export function bottomN(scores: Scored, n: number): Scored {
+export function filter_bottomN(scores: Scored, n: number): Scored {
   return [...scores].sort((a, b) => a[1] - b[1]).slice(0, n);
 }
 
+/** Keep symbols in the top or bottom X% of ranked scores. */
+export function filter_quantile(
+  scores: Scored,
+  pct: number,
+  which: "top" | "bottom",
+): Scored {
+  if (scores.length === 0) return scores;
+  const sorted = [...scores].sort((a, b) =>
+    which === "top" ? b[1] - a[1] : a[1] - b[1],
+  );
+  const cutoff = Math.max(1, Math.round(sorted.length * pct));
+  return sorted.slice(0, cutoff);
+}
+
+// --- norm_* (Scored → Scored) ---
+
+/** Linear scale scores to [lo, hi] range. Default [0, 1]. */
+export function norm_minMax(
+  scores: Scored,
+  lo = 0,
+  hi = 1,
+): Scored {
+  if (scores.length === 0) return scores;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const [, s] of scores) {
+    if (s < min) min = s;
+    if (s > max) max = s;
+  }
+  const range = max - min;
+  if (range === 0) return scores.map(([sym]) => [sym, (lo + hi) / 2] as [string, number]);
+  return scores.map(([sym, s]) => [sym, lo + ((s - min) / range) * (hi - lo)] as [string, number]);
+}
+
+/** Cross-sectional z-score: (x - μ) / σ. Returns empty if σ = 0. */
+export function norm_zScore(scores: Scored): Scored {
+  if (scores.length === 0) return scores;
+  const n = scores.length;
+  const mean = scores.reduce((acc, [, s]) => acc + s, 0) / n;
+  const variance =
+    scores.reduce((acc, [, s]) => acc + (s - mean) ** 2, 0) / n;
+  if (variance === 0) return scores;
+  const std = Math.sqrt(variance);
+  return scores.map(([sym, s]) => [sym, (s - mean) / std] as [string, number]);
+}
+
+/** Replace each score with its percentile rank in [0, 1]. */
+export function norm_rank(scores: Scored): Scored {
+  if (scores.length === 0) return scores;
+  const n = scores.length;
+  const sorted = [...scores].sort((a, b) => a[1] - b[1]);
+  const rankMap = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    rankMap.set(sorted[i]![0], i / (n - 1));
+  }
+  return scores.map(([sym]) => [sym, rankMap.get(sym)!] as [string, number]);
+}
+
+// --- basket_* (Scored → Basket) ---
+
 /** Equal weight: 1/n per symbol. Ignores scores. */
-export function equal(scores: Scored): Basket {
+export function basket_equal(scores: Scored): Basket {
   const n = scores.length;
   if (n === 0) return new Map();
   const w = 1 / n;
@@ -24,14 +86,16 @@ export function equal(scores: Scored): Basket {
 }
 
 /** Weight proportional to score. Scores must sum > 0. */
-export function proportional(scores: Scored): Basket {
+export function basket_proportional(scores: Scored): Basket {
   const sum = scores.reduce((acc, [, s]) => acc + s, 0);
   if (sum <= 0) return new Map();
-  return new Map(scores.map(([sym, s]) => [sym, s / sum] as [string, number]));
+  return new Map(
+    scores.map(([sym, s]) => [sym, s / sum] as [string, number]),
+  );
 }
 
 /** Linear rank weight: highest score gets n/(1+2+..+n), lowest gets 1/(1+2+..+n). */
-export function rank(scores: Scored): Basket {
+export function basket_rank(scores: Scored): Basket {
   const n = scores.length;
   if (n === 0) return new Map();
   const sorted = [...scores].sort((a, b) => b[1] - a[1]);
@@ -41,11 +105,13 @@ export function rank(scores: Scored): Basket {
   );
 }
 
+// --- risk_* (Basket → Basket) ---
+
 /**
  * Cap any single weight at max, redistribute excess proportionally among
  * uncapped symbols. Iterates until stable. Unallocated remainder stays in cash.
  */
-export function capWeight(basket: Basket, max: number): Basket {
+export function risk_capWeight(basket: Basket, max: number): Basket {
   const entries = [...basket];
   if (entries.length === 0) return new Map();
 
@@ -84,7 +150,7 @@ export function capWeight(basket: Basket, max: number): Basket {
  * Controls turnover by limiting how much a weight can move in one period.
  * Symbols present in current but absent in target are treated as target=0.
  */
-export function limitDeltas(
+export function risk_limitDeltas(
   target: Basket,
   current: Basket,
   maxDelta: number,
